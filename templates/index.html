@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CrowdLens — Crowd Density Analyzer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <!-- SCANLINE OVERLAY -->
+  <div class="scanlines"></div>
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo">
+        <div class="logo-icon">
+          <div class="logo-ring"></div>
+          <div class="logo-dot"></div>
+        </div>
+        <div class="logo-text">
+          <span class="logo-main">CROWDLENS</span>
+          <span class="logo-sub">DENSITY ANALYSIS SYSTEM v3.0 · REAL-TIME</span>
+        </div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="status-pill" id="statusPill">
+        <div class="status-led idle" id="statusLed"></div>
+        <span id="statusText">IDLE</span>
+      </div>
+      <div class="header-clock" id="clock">00:00:00</div>
+    </div>
+  </header>
+
+  <!-- MAIN LAYOUT -->
+  <main class="main">
+
+    <!-- ═══ LEFT PANEL ═══ -->
+    <aside class="panel panel-left">
+      <div class="panel-label">▸ INPUT SOURCE</div>
+
+      <!-- DROP ZONE -->
+      <div class="dropzone" id="dropzone">
+        <div class="dropzone-inner" id="dropzoneInner">
+          <div class="drop-icon">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+              <rect x="4" y="4" width="40" height="40" rx="2" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 2"/>
+              <path d="M24 32V20M24 20L18 26M24 20L30 26" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M14 36h6M28 36h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+            </svg>
+          </div>
+          <div class="drop-title">DROP IMAGE OR VIDEO</div>
+          <div class="drop-sub">PNG · JPG · MP4 · AVI · MOV · up to 500MB</div>
+          <label class="btn-upload">
+            <input type="file" id="fileInput" accept="image/*,video/*" hidden>
+            SELECT FILE
+          </label>
+        </div>
+
+        <!-- FILE PREVIEW -->
+        <div class="file-preview hidden" id="filePreview">
+          <div class="file-info">
+            <div class="file-thumb-wrap">
+              <img id="thumbImg" class="file-thumb hidden" alt="preview">
+              <div class="file-thumb video-thumb hidden" id="thumbVideo">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+              </div>
+            </div>
+            <div class="file-meta">
+              <div class="file-name" id="fileName">—</div>
+              <div class="file-size" id="fileSize">—</div>
+              <div class="file-type-badge" id="fileTypeBadge">IMAGE</div>
+            </div>
+          </div>
+          <label class="btn-change">
+            <input type="file" id="fileInputChange" accept="image/*,video/*" hidden>
+            CHANGE
+          </label>
+        </div>
+      </div>
+
+      <!-- CONFIG -->
+      <div class="config-section">
+        <div class="panel-label">▸ GRID CONFIGURATION</div>
+        <div class="config-grid">
+          <div class="config-item">
+            <label class="config-label">ROWS</label>
+            <div class="slider-row">
+              <input type="range" class="slider" id="gridRows" min="3" max="20" value="10">
+              <span class="slider-val" id="gridRowsVal">10</span>
+            </div>
+          </div>
+          <div class="config-item">
+            <label class="config-label">COLUMNS</label>
+            <div class="slider-row">
+              <input type="range" class="slider" id="gridCols" min="3" max="20" value="10">
+              <span class="slider-val" id="gridColsVal">10</span>
+            </div>
+          </div>
+          <div class="config-item hidden" id="sampleRateConfig">
+            <label class="config-label">ANALYZE EVERY N FRAMES</label>
+            <div class="slider-row">
+              <input type="range" class="slider" id="sampleRate" min="5" max="90" value="10">
+              <span class="slider-val" id="sampleRateVal">10</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ANALYZE BUTTON -->
+      <button class="btn-analyze" id="analyzeBtn" disabled onclick="runAnalysis()">
+        <span class="btn-analyze-inner">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          RUN ANALYSIS
+        </span>
+        <div class="btn-scan"></div>
+      </button>
+
+      <!-- PROGRESS (image mode only) -->
+      <div class="progress-wrap hidden" id="progressWrap">
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progressBar"></div>
+        </div>
+        <div class="progress-label" id="progressLabel">Initializing...</div>
+      </div>
+
+      <!-- MODEL INFO -->
+      <div class="model-info">
+        <div class="mi-row"><span>ENGINE</span><span class="mi-val" id="mi_pipeline">YOLOv8 + HOG fallback</span></div>
+        <div class="mi-row"><span>DETECTOR</span><span class="mi-val" id="mi_detector">Person class (COCO)</span></div>
+        <div class="mi-row"><span>HEATMAP</span><span class="mi-val" id="mi_density">Gaussian KDE + JET colormap</span></div>
+        <div class="mi-row"><span>VIDEO</span><span class="mi-val" style="color:var(--accent)">REAL-TIME FRAME STREAM</span></div>
+      </div>
+    </aside>
+
+    <!-- ═══ CENTER PANEL ═══ -->
+    <section class="panel panel-center">
+
+      <!-- Empty state -->
+      <div class="empty-state" id="emptyState">
+        <div class="empty-grid"></div>
+        <div class="empty-text">
+          <div class="empty-title">AWAITING INPUT</div>
+          <div class="empty-sub">Upload an image or video to begin density analysis</div>
+        </div>
+      </div>
+
+      <!-- Results area -->
+      <div class="results hidden" id="results">
+
+        <!-- Alert Banner -->
+        <div class="alert-banner hidden" id="alertBanner">
+          <div class="alert-dot"></div>
+          <span id="alertText">⚠ CRITICAL DENSITY DETECTED</span>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="summary-cards" id="summaryCards" style="visibility:hidden">
+          <div class="summary-card">
+            <div class="sc-val accent" id="scPeople">—</div>
+            <div class="sc-label">PEOPLE COUNT</div>
+          </div>
+          <div class="summary-card">
+            <div class="sc-val" id="scDensity">—</div>
+            <div class="sc-label">DENSITY LEVEL</div>
+          </div>
+          <div class="summary-card">
+            <div class="sc-val muted" id="scTime">—</div>
+            <div class="sc-label">INFERENCE TIME</div>
+          </div>
+        </div>
+
+        <!-- ── VIDEO BLOCK ──
+             The video plays immediately from a local Blob URL.
+             A transparent canvas overlaid on top receives bounding-box
+             and grid drawings from the real-time /analyze/frame results. -->
+        <div class="video-block hidden" id="videoBlock">
+          <div class="video-header">
+            <span class="video-header-label">▶ LIVE ANALYSIS FEED</span>
+            <div style="display:flex;align-items:center;gap:12px">
+              <span id="liveFrameCounter"
+                    style="font-family:var(--font-mono);font-size:11px;
+                           color:var(--text-dim);letter-spacing:1px">
+                FRAMES: 0 · PEAK: 0
+              </span>
+              <span class="live-badge hidden" id="liveBadge">
+                <span class="live-badge-dot"></span> LIVE
+              </span>
+            </div>
+          </div>
+          <div class="video-container" style="position:relative;">
+            <!-- The video element — plays locally, zero upload wait -->
+            <video id="resultVideo" class="result-video" controls playsinline muted loop></video>
+            <!-- Overlay canvas — drawn by drawLiveOverlay() in app.js -->
+            <canvas id="videoOverlayCanvas"
+                    style="position:absolute;top:0;left:0;
+                           width:100%;height:100%;
+                           pointer-events:none;z-index:2;"></canvas>
+          </div>
+          <!-- LIVE STATS BAR: updates in real time below the video -->
+          <div class="live-stats-bar" id="liveStatsBar">
+            <div class="live-stat-item">
+              <span class="live-stat-label">PEOPLE</span>
+              <span class="live-stat-val" id="lsb_people">—</span>
+            </div>
+            <span class="live-stat-sep">|</span>
+            <div class="live-stat-item">
+              <span class="live-stat-label">DENSITY</span>
+              <span class="live-stat-val" id="lsb_density">—</span>
+            </div>
+            <span class="live-stat-sep">|</span>
+            <div class="live-stat-item">
+              <span class="live-stat-label">LEVEL</span>
+              <span class="live-stat-val" id="lsb_level">—</span>
+            </div>
+            <span class="live-stat-sep">|</span>
+            <div class="live-stat-item">
+              <span class="live-stat-label">INFERENCE</span>
+              <span class="live-stat-val" id="lsb_inference">—</span>
+            </div>
+            <span class="live-stat-sep">|</span>
+            <div class="live-stat-item">
+              <span class="live-stat-label">PEAK</span>
+              <span class="live-stat-val" id="lsb_peak">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hidden offscreen canvas used for frame capture (never displayed) -->
+        <canvas id="captureCanvas" style="display:none"></canvas>
+
+        <!-- ── IMAGE BLOCK: view tabs + static result image ── -->
+        <div id="imgBlock">
+          <div class="view-tabs">
+            <button class="vtab active" onclick="setView('original', this)">ORIGINAL</button>
+            <button class="vtab" onclick="setView('annotated', this)">GRID + BOXES</button>
+            <button class="vtab" onclick="setView('heatmap', this)">HEATMAP</button>
+          </div>
+          <div class="img-frame">
+            <img id="displayImg" alt="result" class="result-img">
+            <div class="img-badge" id="imgLabel">ORIGINAL</div>
+          </div>
+        </div>
+
+        <!-- Gauge Row -->
+        <div class="gauge-row" id="gaugeRow" style="visibility:hidden">
+          <div class="gauge-wrap">
+            <canvas id="gaugeCanvas" width="170" height="170"></canvas>
+            <div class="gauge-center">
+              <div class="gauge-pct" id="gaugePct">0%</div>
+              <div class="gauge-lbl" id="gaugeLabel">—</div>
+            </div>
+          </div>
+          <div class="gstats">
+            <div class="gstat">
+              <div class="gstat-val" id="gs_people">—</div>
+              <div class="gstat-lbl">PEOPLE DETECTED</div>
+            </div>
+            <div class="gstat">
+              <div class="gstat-val" id="gs_res">—</div>
+              <div class="gstat-lbl">RESOLUTION</div>
+            </div>
+            <div class="gstat">
+              <div class="gstat-val" id="gs_time">—</div>
+              <div class="gstat-lbl">INFERENCE TIME</div>
+            </div>
+            <div class="gstat">
+              <div class="gstat-val" id="gs_peak">—</div>
+              <div class="gstat-lbl">PEAK COUNT</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Grid Table -->
+        <div class="section-hdr" id="gridHeader" style="display:none">SPATIAL GRID — PEOPLE PER CELL</div>
+        <div class="grid-wrap" id="gridWrap" style="display:none">
+          <div id="gridTable" class="grid-table"></div>
+        </div>
+
+        <!-- Line Chart (image mode: row distribution) -->
+        <div id="lineChartSection" style="display:none">
+          <div class="section-hdr" id="lineChartTitle">ROW DISTRIBUTION</div>
+          <div class="chart-box">
+            <canvas id="lineChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Video Timeline (live, updates per frame) -->
+        <div id="timelineSection" class="hidden">
+          <div class="section-hdr">LIVE TIMELINE — PEOPLE COUNT PER FRAME</div>
+          <div class="chart-box">
+            <canvas id="timelineChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Hotspots -->
+        <div class="section-hdr" id="hotspotHeader" style="display:none">HOTSPOT ZONES</div>
+        <div class="hotspot-list" id="hotspotList" style="display:none"></div>
+
+      </div><!-- /results -->
+    </section>
+
+    <!-- ═══ RIGHT PANEL ═══ -->
+    <aside class="panel panel-right">
+      <div class="panel-label">▸ DENSITY LEGEND</div>
+      <div class="legend-stack">
+        <div class="legend-item">
+          <div class="legend-swatch critical"></div>
+          <div class="legend-info"><span class="legend-name">CRITICAL</span><span class="legend-range">75–100%</span></div>
+        </div>
+        <div class="legend-item">
+          <div class="legend-swatch high"></div>
+          <div class="legend-info"><span class="legend-name">HIGH</span><span class="legend-range">50–74%</span></div>
+        </div>
+        <div class="legend-item">
+          <div class="legend-swatch moderate"></div>
+          <div class="legend-info"><span class="legend-name">MODERATE</span><span class="legend-range">20–49%</span></div>
+        </div>
+        <div class="legend-item">
+          <div class="legend-swatch low"></div>
+          <div class="legend-info"><span class="legend-name">LOW</span><span class="legend-range">0–19%</span></div>
+        </div>
+      </div>
+
+      <div class="panel-label" style="margin-top:24px">▸ COLOR MAP</div>
+      <div class="colormap-wrap">
+        <div class="colormap-bar"></div>
+        <div class="colormap-labels">
+          <span>EMPTY</span><span>DENSE</span>
+        </div>
+      </div>
+
+      <div class="panel-label" style="margin-top:24px">▸ ANALYSIS LOG</div>
+      <div class="log-panel" id="logPanel">
+        <div class="log-line dim">System ready.</div>
+        <div class="log-line dim">Awaiting input file...</div>
+      </div>
+
+      <div class="panel-label" style="margin-top:24px">▸ ZONE BREAKDOWN</div>
+      <div class="zone-breakdown" id="zoneBreakdown">
+        <div class="dim small" style="padding:8px 0">No data yet.</div>
+      </div>
+    </aside>
+
+  </main>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
